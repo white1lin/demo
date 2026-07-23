@@ -105,16 +105,16 @@ function clip(text: string, max = 12000) {
 
 async function fetchModel(url: string, options: RequestInit) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), modelTimeoutMs);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutResult = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(new Error("Model response timed out. Check the configured model and try again."));
+    }, modelTimeoutMs);
+  });
 
   try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new Error("模型响应超时，请确认模型配置后重试。");
-    }
-
-    throw error;
+    return await Promise.race([fetch(url, { ...options, signal: controller.signal }), timeoutResult]);
   } finally {
     clearTimeout(timeout);
   }

@@ -181,6 +181,21 @@ function includesSkill(text: string, skill: string) {
   return text.toLocaleLowerCase().includes(skill.toLocaleLowerCase());
 }
 
+function normalizeSkill(skill: string) {
+  return skill.toLocaleLowerCase().replace(/[\s,，、/()（）-]/g, "");
+}
+
+function matchSkillsWithEvidence(skills: string[], resumeText: string, semanticMatches: string[]) {
+  const normalizedSelections = semanticMatches.map(normalizeSkill).filter(Boolean);
+  return skills.filter((skill) => {
+    if (includesSkill(resumeText, skill)) return true;
+    const normalizedSkill = normalizeSkill(skill);
+    return normalizedSelections.some(
+      (selection) => selection === normalizedSkill || selection.includes(normalizedSkill) || normalizedSkill.includes(selection)
+    );
+  });
+}
+
 function findSkills(text: string) {
   return skillCatalog.filter((skill) => includesSkill(text, skill));
 }
@@ -202,12 +217,21 @@ function scorePriority(score: number): MatchAnalysis["priority"] {
 function calculateScore(
   job: JobAnalysis,
   resumeText: string,
-  projectEvidence: MatchAnalysis["projectEvidence"]
+  projectEvidence: MatchAnalysis["projectEvidence"],
+  semanticScoring?: Pick<MatchAnalysis["scoring"], "matchedRequiredSkills" | "matchedBonusSkills">
 ) {
   const requiredSkills = job.requiredSkills?.length > 0 ? job.requiredSkills : job.skills;
   const bonusSkills = job.bonusSkills ?? [];
-  const matchedRequiredSkills = requiredSkills.filter((skill) => includesSkill(resumeText, skill));
-  const matchedBonusSkills = bonusSkills.filter((skill) => includesSkill(resumeText, skill));
+  const matchedRequiredSkills = matchSkillsWithEvidence(
+    requiredSkills,
+    resumeText,
+    semanticScoring?.matchedRequiredSkills ?? []
+  );
+  const matchedBonusSkills = matchSkillsWithEvidence(
+    bonusSkills,
+    resumeText,
+    semanticScoring?.matchedBonusSkills ?? []
+  );
   const requiredPoints = requiredSkills.length
     ? Math.round((matchedRequiredSkills.length / requiredSkills.length) * 40)
     : 0;
@@ -247,7 +271,7 @@ function calculateScore(
 }
 
 function applyExplainableScore(job: JobAnalysis, resumeText: string, match: MatchAnalysis): MatchAnalysis {
-  const score = calculateScore(job, resumeText, match.projectEvidence);
+  const score = calculateScore(job, resumeText, match.projectEvidence, match.scoring);
   return {
     ...match,
     matchScore: score.score,
@@ -260,7 +284,7 @@ function applyExplainableScore(job: JobAnalysis, resumeText: string, match: Matc
       matchedRequiredSkills: score.matchedRequiredSkills,
       matchedBonusSkills: score.matchedBonusSkills,
       confidence: score.confidence,
-      rationale: score.rationale
+    rationale: `${score.rationale} 必备项和加分项包含简历中的直接表述或模型识别出的近义证据。`
     }
   };
 }
@@ -508,7 +532,9 @@ export async function analyzeJobAndMatchResume(
     "Analyze the job description and resume together. Return a structured job object and a candidate match object. " +
       "Put explicitly required capabilities in job.requiredSkills and only bonus or preferred capabilities in job.bonusSkills. " +
       "Only extract project evidence clearly stated in the resume. If relevant project evidence is missing, ask one concise follow-up question; otherwise return an empty string. " +
-      "The application recalculates matchScore and scoring, so provide valid placeholder values for them.",
+      "For scoring.matchedRequiredSkills and scoring.matchedBonusSkills, return only exact skill strings from the job object. " +
+      "Select a skill only when the resume contains direct evidence or a clear semantic equivalent (for example, spreadsheet analysis can support data analysis). " +
+      "Do not infer skills that have no resume evidence. The application recalculates numeric scores.",
     "job_resume_analysis",
     combinedAnalysisSchema,
     JSON.stringify({ jobText: clip(jobText), resumeText: clip(resumeText) })

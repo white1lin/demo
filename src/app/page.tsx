@@ -229,8 +229,8 @@ export default function Home() {
                 <p>{scoring.rationale}</p>
                 <BulletList
                   items={[
-                    `明确要求匹配：${scoring.matchedRequiredSkills.join("、") || "暂未匹配"}（${scoring.requiredPoints} 分）`,
-                    `岗位加分项匹配：${scoring.matchedBonusSkills.join("、") || "暂无或未匹配"}（${scoring.bonusPoints} 分）`,
+                    `必备要求证据（含近义表达）：${scoring.matchedRequiredSkills.join("、") || "暂未匹配"}（${scoring.requiredPoints} 分）`,
+                    `岗位加分项证据（含近义表达）：${scoring.matchedBonusSkills.join("、") || "暂无或未匹配"}（${scoring.bonusPoints} 分）`,
                     `相关项目：${scoring.projectPoints > 0 ? "项目直接证明了岗位能力" : "未找到直接相关的项目证据"}（${scoring.projectPoints} 分）`,
                     `项目成果：${scoring.outcomePoints > 0 ? "项目包含可验证成果" : "建议补充项目结果或量化指标"}（${scoring.outcomePoints} 分）`
                   ]}

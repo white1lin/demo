@@ -2,6 +2,7 @@ import type { JobAnalysis, MatchAnalysis } from "./schemas";
 
 const openAIModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const nvidiaModel = process.env.NVIDIA_MODEL;
+const modelTimeoutMs = 25_000;
 
 const jobSchema = {
   type: "object",
@@ -100,6 +101,23 @@ const matchSchema = {
 
 function clip(text: string, max = 12000) {
   return text.trim().slice(0, max);
+}
+
+async function fetchModel(url: string, options: RequestInit) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), modelTimeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error("模型响应超时，请确认模型配置后重试。");
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 const skillCatalog = [
@@ -309,7 +327,7 @@ async function callOpenAI<T>(task: string, schemaName: string, schema: object, i
     throw new Error("OPENAI_API_KEY is not configured.");
   }
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const response = await fetchModel("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -372,7 +390,7 @@ async function callNvidia<T>(task: string, schemaName: string, schema: object, i
     throw new Error("NVIDIA_MODEL is not configured. Copy a model ID from build.nvidia.com.");
   }
 
-  const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+  const response = await fetchModel("https://integrate.api.nvidia.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${process.env.NVIDIA_API_KEY}`,

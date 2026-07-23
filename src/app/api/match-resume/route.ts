@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { analyzeJob, matchResume } from "@/lib/ai";
+import { analyzeJobAndMatchResume } from "@/lib/ai";
 
 const maxInputChars = 12000;
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   let body: { jobText?: string; resumeText?: string };
@@ -33,11 +33,9 @@ export async function POST(request: Request) {
       hasNvidiaKey: Boolean(process.env.NVIDIA_API_KEY),
       hasOpenAIKey: Boolean(process.env.OPENAI_API_KEY)
     });
-    const job = await analyzeJob(jobText);
-    console.info("Job analysis completed; starting resume match");
-    const match = await matchResume(job, resumeText);
-    console.info("Resume match completed");
-    return NextResponse.json({ job, match });
+    const result = await analyzeJobAndMatchResume(jobText, resumeText);
+    console.info("Job and resume analysis completed");
+    return NextResponse.json(result);
   } catch (error) {
     console.error("Job analysis failed", error);
     return NextResponse.json(

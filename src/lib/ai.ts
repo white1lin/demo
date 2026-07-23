@@ -2,7 +2,8 @@ import type { JobAnalysis, MatchAnalysis } from "./schemas";
 
 const openAIModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const nvidiaModel = process.env.NVIDIA_MODEL;
-const modelTimeoutMs = 25_000;
+const modelTimeoutMs = 20_000;
+const modelAttempts = 2;
 
 const jobSchema = {
   type: "object",
@@ -99,25 +100,47 @@ const matchSchema = {
   ]
 };
 
+const combinedAnalysisSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    job: jobSchema,
+    match: matchSchema
+  },
+  required: ["job", "match"]
+};
+
 function clip(text: string, max = 12000) {
   return text.trim().slice(0, max);
 }
 
 async function fetchModel(url: string, options: RequestInit) {
-  const controller = new AbortController();
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  const timeoutResult = new Promise<never>((_, reject) => {
-    timeout = setTimeout(() => {
-      controller.abort();
-      reject(new Error("Model response timed out. Check the configured model and try again."));
-    }, modelTimeoutMs);
-  });
+  let lastError: unknown;
 
-  try {
-    return await Promise.race([fetch(url, { ...options, signal: controller.signal }), timeoutResult]);
-  } finally {
-    clearTimeout(timeout);
+  for (let attempt = 1; attempt <= modelAttempts; attempt += 1) {
+    const controller = new AbortController();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const timeoutResult = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => {
+        controller.abort();
+        reject(new Error("Model response timed out. Check the configured model and try again."));
+      }, modelTimeoutMs);
+    });
+
+    try {
+      return await Promise.race([fetch(url, { ...options, signal: controller.signal }), timeoutResult]);
+    } catch (error) {
+      lastError = error;
+      if (attempt < modelAttempts) {
+        console.warn("Model request did not complete; retrying", { attempt, modelAttempts });
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
   }
+
+  throw lastError;
 }
 
 const skillCatalog = [
@@ -470,4 +493,29 @@ export async function matchResume(job: JobAnalysis, resumeText: string): Promise
   );
 
   return applyExplainableScore(job, resumeText, analysis);
+}
+
+export async function analyzeJobAndMatchResume(
+  jobText: string,
+  resumeText: string
+): Promise<{ job: JobAnalysis; match: MatchAnalysis }> {
+  if (activeProvider() === "mock") {
+    const job = mockJobAnalysis(jobText);
+    return { job, match: applyExplainableScore(job, resumeText, mockMatchAnalysis(job, resumeText)) };
+  }
+
+  const result = await callProvider<{ job: JobAnalysis; match: MatchAnalysis }>(
+    "Analyze the job description and resume together. Return a structured job object and a candidate match object. " +
+      "Put explicitly required capabilities in job.requiredSkills and only bonus or preferred capabilities in job.bonusSkills. " +
+      "Only extract project evidence clearly stated in the resume. If relevant project evidence is missing, ask one concise follow-up question; otherwise return an empty string. " +
+      "The application recalculates matchScore and scoring, so provide valid placeholder values for them.",
+    "job_resume_analysis",
+    combinedAnalysisSchema,
+    JSON.stringify({ jobText: clip(jobText), resumeText: clip(resumeText) })
+  );
+
+  return {
+    job: result.job,
+    match: applyExplainableScore(result.job, resumeText, result.match)
+  };
 }

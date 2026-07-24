@@ -10,7 +10,7 @@ const sampleResume =
   "我有运营和内容经验，做过招聘信息整理、表格分析和自动化工具尝试。熟悉用户沟通，正在学习 AI 产品、Prompt 和前端开发，希望转向 AI 产品经理方向。";
 
 const maxInputChars = 12000;
-const analysisVersion = 2;
+const analysisVersion = 3;
 
 function priorityLabel(priority: MatchAnalysis["priority"]) {
   return priority === "high" ? "优先投递" : priority === "medium" ? "可以投递" : "谨慎投递";
@@ -55,15 +55,18 @@ export default function Home() {
     jobText,
     resumeText
   ]);
-  const scoring = match?.scoring ?? {
+  const scoring = {
     requiredPoints: 0,
+    transferablePoints: 0,
     bonusPoints: 0,
     projectPoints: 0,
     outcomePoints: 0,
     matchedRequiredSkills: [],
     matchedBonusSkills: [],
+    transferableEvidence: [],
     confidence: "low" as const,
-    rationale: "这是旧版历史记录，尚未保存评分依据。请重新分析以生成可解释评分。"
+    rationale: "这是旧版历史记录，尚未保存评分依据。请重新分析以生成可解释评分。",
+    ...(match?.scoring ?? {})
   };
   const projectEvidence = match?.projectEvidence ?? [];
   const followUpQuestion =
@@ -261,6 +264,7 @@ export default function Home() {
                 <BulletList
                   items={[
                     `必备要求证据（含近义表达）：${scoring.matchedRequiredSkills.join("、") || "暂未匹配"}（${scoring.requiredPoints} 分）`,
+                    `可迁移能力：${scoring.transferableEvidence.map((item) => item.resumeEvidence).join("、") || "未找到"}（${scoring.transferablePoints} 分）`,
                     `岗位加分项证据（含近义表达）：${scoring.matchedBonusSkills.join("、") || "暂无或未匹配"}（${scoring.bonusPoints} 分）`,
                     `相关项目：${scoring.projectPoints > 0 ? "项目直接证明了岗位能力" : "未找到直接相关的项目证据"}（${scoring.projectPoints} 分）`,
                     `项目成果：${scoring.outcomePoints > 0 ? "项目包含可验证成果" : "建议补充项目结果或量化指标"}（${scoring.outcomePoints} 分）`

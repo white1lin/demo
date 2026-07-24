@@ -29,11 +29,16 @@ export type MatchAnalysis = {
   }>;
   scoring: {
     requiredPoints: number;
+    transferablePoints: number;
     bonusPoints: number;
     projectPoints: number;
     outcomePoints: number;
     matchedRequiredSkills: string[];
     matchedBonusSkills: string[];
+    transferableEvidence: Array<{
+      resumeEvidence: string;
+      supportsRequirement: string;
+    }>;
     confidence: "high" | "medium" | "low";
     rationale: string;
   };

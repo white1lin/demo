@@ -66,21 +66,36 @@ const matchSchema = {
       additionalProperties: false,
       properties: {
         requiredPoints: { type: "number" },
+        transferablePoints: { type: "number" },
         bonusPoints: { type: "number" },
         projectPoints: { type: "number" },
         outcomePoints: { type: "number" },
         matchedRequiredSkills: { type: "array", items: { type: "string" } },
         matchedBonusSkills: { type: "array", items: { type: "string" } },
+        transferableEvidence: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              resumeEvidence: { type: "string" },
+              supportsRequirement: { type: "string" }
+            },
+            required: ["resumeEvidence", "supportsRequirement"]
+          }
+        },
         confidence: { type: "string", enum: ["high", "medium", "low"] },
         rationale: { type: "string" }
       },
       required: [
         "requiredPoints",
+        "transferablePoints",
         "bonusPoints",
         "projectPoints",
         "outcomePoints",
         "matchedRequiredSkills",
         "matchedBonusSkills",
+        "transferableEvidence",
         "confidence",
         "rationale"
       ]
@@ -218,7 +233,11 @@ function calculateScore(
   job: JobAnalysis,
   resumeText: string,
   projectEvidence: MatchAnalysis["projectEvidence"],
-  semanticScoring?: Pick<MatchAnalysis["scoring"], "matchedRequiredSkills" | "matchedBonusSkills">
+  semanticScoring?: Pick<
+    MatchAnalysis["scoring"],
+    "matchedRequiredSkills" | "matchedBonusSkills" | "transferableEvidence"
+  >,
+  sourceJobText = job.summary
 ) {
   const requiredSkills = job.requiredSkills?.length > 0 ? job.requiredSkills : job.skills;
   const bonusSkills = job.bonusSkills ?? [];
@@ -232,38 +251,62 @@ function calculateScore(
     resumeText,
     semanticScoring?.matchedBonusSkills ?? []
   );
+  const transferableEvidence = (semanticScoring?.transferableEvidence ?? []).filter((item) => {
+    const requirement = requiredSkills.find(
+      (skill) => normalizeSkill(skill) === normalizeSkill(item.supportsRequirement)
+    );
+    return (
+      Boolean(requirement) &&
+      !matchedRequiredSkills.some((skill) => normalizeSkill(skill) === normalizeSkill(item.supportsRequirement)) &&
+      item.resumeEvidence.length >= 2 &&
+      includesSkill(resumeText, item.resumeEvidence)
+    );
+  });
+  const uniqueTransferableEvidence = transferableEvidence.filter(
+    (item, index, items) =>
+      items.findIndex(
+        (candidate) => normalizeSkill(candidate.supportsRequirement) === normalizeSkill(item.supportsRequirement)
+      ) === index
+  );
   const requiredPoints = requiredSkills.length
-    ? Math.round((matchedRequiredSkills.length / requiredSkills.length) * 40)
+    ? Math.round((matchedRequiredSkills.length / requiredSkills.length) * 45)
     : 0;
+  const transferablePoints = Math.min(15, uniqueTransferableEvidence.length * 5);
   const bonusPoints = bonusSkills.length
     ? Math.round((matchedBonusSkills.length / bonusSkills.length) * 15)
     : 0;
   const directlyRelevantProject = projectEvidence.find(
     (project) =>
-      project.matchedRequirements.some((skill) => requiredSkills.includes(skill)) &&
+      project.matchedRequirements.some((skill) =>
+        matchedRequiredSkills.some((matchedSkill) => normalizeSkill(matchedSkill) === normalizeSkill(skill))
+      ) &&
       project.relevance !== "low"
   );
-  const projectPoints = directlyRelevantProject?.relevance === "high" ? 30 : directlyRelevantProject ? 20 : 0;
+  const projectPoints = directlyRelevantProject?.relevance === "high" ? 15 : directlyRelevantProject ? 10 : 0;
   const outcomes = projectEvidence.flatMap((project) => project.outcomes);
-  const outcomePoints = outcomes.some((outcome) => /\d|%|增长|提升|节省|减少/.test(outcome))
-    ? 15
-    : outcomes.length > 0
-      ? 8
-      : 0;
-  const score = Math.min(100, requiredPoints + bonusPoints + projectPoints + outcomePoints);
+  const outcomePoints = directlyRelevantProject
+    ? outcomes.some((outcome) => /\d|%|增长|提升|节省|减少/.test(outcome))
+      ? 10
+      : outcomes.length > 0
+        ? 5
+        : 0
+    : 0;
+  const score = Math.min(100, requiredPoints + transferablePoints + bonusPoints + projectPoints + outcomePoints);
   const detailCount = requiredSkills.length + bonusSkills.length + job.responsibilities.length;
-  const hasSparseEvidence = resumeText.trim().length < 40 || job.summary.trim().length < 40;
+  const hasSparseEvidence = resumeText.trim().length < 40 || sourceJobText.trim().length < 40;
   const confidence: MatchAnalysis["scoring"]["confidence"] =
     hasSparseEvidence || detailCount <= 2 ? "low" : detailCount <= 5 ? "medium" : "high";
 
   return {
     score,
     requiredPoints,
+    transferablePoints,
     bonusPoints,
     projectPoints,
     outcomePoints,
     matchedRequiredSkills,
     matchedBonusSkills,
+    transferableEvidence: uniqueTransferableEvidence,
     confidence,
     rationale: `明确要求匹配 ${matchedRequiredSkills.length}/${requiredSkills.length} 项，` +
       `岗位加分项匹配 ${matchedBonusSkills.length}/${bonusSkills.length} 项，` +
@@ -272,19 +315,26 @@ function calculateScore(
   };
 }
 
-function applyExplainableScore(job: JobAnalysis, resumeText: string, match: MatchAnalysis): MatchAnalysis {
-  const score = calculateScore(job, resumeText, match.projectEvidence, match.scoring);
+function applyExplainableScore(
+  job: JobAnalysis,
+  resumeText: string,
+  match: MatchAnalysis,
+  sourceJobText?: string
+): MatchAnalysis {
+  const score = calculateScore(job, resumeText, match.projectEvidence, match.scoring, sourceJobText);
   return {
     ...match,
     matchScore: score.score,
     priority: scorePriority(score.score),
     scoring: {
       requiredPoints: score.requiredPoints,
+      transferablePoints: score.transferablePoints,
       bonusPoints: score.bonusPoints,
       projectPoints: score.projectPoints,
       outcomePoints: score.outcomePoints,
       matchedRequiredSkills: score.matchedRequiredSkills,
       matchedBonusSkills: score.matchedBonusSkills,
+      transferableEvidence: score.transferableEvidence,
       confidence: score.confidence,
     rationale: `${score.rationale} 必备项和加分项包含简历中的直接表述或模型识别出的近义证据。`
     }
@@ -360,11 +410,13 @@ function mockMatchAnalysis(job: JobAnalysis, resumeText: string): MatchAnalysis 
     projectEvidence: [],
     scoring: {
       requiredPoints: 0,
+      transferablePoints: 0,
       bonusPoints: 0,
       projectPoints: 0,
       outcomePoints: 0,
       matchedRequiredSkills: [],
       matchedBonusSkills: [],
+      transferableEvidence: [],
       confidence: "low",
       rationale: "等待本地评分规则计算。"
     }
@@ -527,7 +579,10 @@ export async function analyzeJobAndMatchResume(
 ): Promise<{ job: JobAnalysis; match: MatchAnalysis }> {
   if (activeProvider() === "mock") {
     const job = mockJobAnalysis(jobText);
-    return { job, match: applyExplainableScore(job, resumeText, mockMatchAnalysis(job, resumeText)) };
+    return {
+      job,
+      match: applyExplainableScore(job, resumeText, mockMatchAnalysis(job, resumeText), jobText)
+    };
   }
 
   const result = await callProvider<{ job: JobAnalysis; match: MatchAnalysis }>(
@@ -536,7 +591,8 @@ export async function analyzeJobAndMatchResume(
       "Only extract project evidence clearly stated in the resume. If relevant project evidence is missing, ask one concise follow-up question; otherwise return an empty string. " +
       "For scoring.matchedRequiredSkills and scoring.matchedBonusSkills, return only exact skill strings from the job object. " +
       "Select a skill only when the resume contains direct evidence or a clear semantic equivalent (for example, spreadsheet analysis can support data analysis). " +
-      "Do not infer skills that have no resume evidence. The application recalculates numeric scores.",
+      "For scoring.transferableEvidence, quote an exact resume phrase and map it to one exact required skill only when it is a closely related transferable capability. " +
+      "Do not treat general interest, learning plans, or unrelated technical projects as transferable evidence. The application recalculates numeric scores.",
     "job_resume_analysis",
     combinedAnalysisSchema,
     JSON.stringify({ jobText: clip(jobText), resumeText: clip(resumeText) })
@@ -544,6 +600,6 @@ export async function analyzeJobAndMatchResume(
 
   return {
     job: result.job,
-    match: applyExplainableScore(result.job, resumeText, result.match)
+    match: applyExplainableScore(result.job, resumeText, result.match, jobText)
   };
 }

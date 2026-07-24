@@ -42,6 +42,7 @@ export type MatchAnalysis = {
 export type AnalysisRecord = {
   id: string;
   createdAt: string;
+  analysisVersion?: number;
   jobText: string;
   resumeText: string;
   job: JobAnalysis;

@@ -10,6 +10,7 @@ const sampleResume =
   "我有运营和内容经验，做过招聘信息整理、表格分析和自动化工具尝试。熟悉用户沟通，正在学习 AI 产品、Prompt 和前端开发，希望转向 AI 产品经理方向。";
 
 const maxInputChars = 12000;
+const analysisVersion = 2;
 
 function priorityLabel(priority: MatchAnalysis["priority"]) {
   return priority === "high" ? "优先投递" : priority === "medium" ? "可以投递" : "谨慎投递";
@@ -81,6 +82,19 @@ export default function Home() {
       return;
     }
 
+    const existingRecord = history.find(
+      (record) =>
+        record.analysisVersion === analysisVersion &&
+        record.jobText === jobText &&
+        record.resumeText === resumeOverride
+    );
+    if (existingRecord) {
+      setJob(existingRecord.job);
+      setMatch(existingRecord.match);
+      setError("");
+      return;
+    }
+
     setIsLoading(true);
     setError("");
 
@@ -102,6 +116,7 @@ export default function Home() {
         {
           id: crypto.randomUUID(),
           createdAt: new Date().toISOString(),
+          analysisVersion,
           jobText,
           resumeText: resumeOverride,
           job: data.job,

@@ -445,7 +445,7 @@ async function callNvidia<T>(task: string, schemaName: string, schema: object, i
     },
     body: JSON.stringify({
       model: nvidiaModel,
-      temperature: 0.2,
+      temperature: 0,
       max_tokens: 1800,
       messages: [
         {

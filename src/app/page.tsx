@@ -51,7 +51,7 @@ export default function Home() {
     window.localStorage.setItem("ai-job-coach-history", JSON.stringify(history));
   }, [history]);
 
-  const canSubmit = useMemo(() => jobText.trim().length > 20 && resumeText.trim().length > 20, [
+  const canSubmit = useMemo(() => jobText.trim().length > 0 && resumeText.trim().length > 0, [
     jobText,
     resumeText
   ]);
@@ -144,6 +144,22 @@ export default function Home() {
     await runAnalysis(enrichedResume);
   }
 
+  function updateJobText(value: string) {
+    setJobText(value);
+    setJob(null);
+    setMatch(null);
+    setError("");
+    setFollowUpAnswer("");
+  }
+
+  function updateResumeText(value: string) {
+    setResumeText(value);
+    setJob(null);
+    setMatch(null);
+    setError("");
+    setFollowUpAnswer("");
+  }
+
   function loadRecord(record: AnalysisRecord) {
     setJobText(record.jobText);
     setResumeText(record.resumeText);
@@ -202,7 +218,7 @@ export default function Home() {
               <textarea
                 value={jobText}
                 maxLength={maxInputChars}
-                onChange={(event) => setJobText(event.target.value)}
+                onChange={(event) => updateJobText(event.target.value)}
               />
               <small className="input-hint">{jobText.length.toLocaleString("zh-CN")} / {maxInputChars.toLocaleString("zh-CN")}</small>
             </label>
@@ -211,7 +227,7 @@ export default function Home() {
               <textarea
                 value={resumeText}
                 maxLength={maxInputChars}
-                onChange={(event) => setResumeText(event.target.value)}
+                onChange={(event) => updateResumeText(event.target.value)}
               />
               <small className="input-hint">{resumeText.length.toLocaleString("zh-CN")} / {maxInputChars.toLocaleString("zh-CN")}</small>
             </label>

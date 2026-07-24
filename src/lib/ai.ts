@@ -252,8 +252,9 @@ function calculateScore(
       : 0;
   const score = Math.min(100, requiredPoints + bonusPoints + projectPoints + outcomePoints);
   const detailCount = requiredSkills.length + bonusSkills.length + job.responsibilities.length;
+  const hasSparseEvidence = resumeText.trim().length < 40 || job.summary.trim().length < 40;
   const confidence: MatchAnalysis["scoring"]["confidence"] =
-    detailCount <= 2 ? "low" : detailCount <= 5 ? "medium" : "high";
+    hasSparseEvidence || detailCount <= 2 ? "low" : detailCount <= 5 ? "medium" : "high";
 
   return {
     score,
@@ -266,7 +267,8 @@ function calculateScore(
     confidence,
     rationale: `明确要求匹配 ${matchedRequiredSkills.length}/${requiredSkills.length} 项，` +
       `岗位加分项匹配 ${matchedBonusSkills.length}/${bonusSkills.length} 项，` +
-      (directlyRelevantProject ? "找到与岗位直接相关的项目经历。" : "未找到与岗位明确要求直接对应的项目经历。")
+      (directlyRelevantProject ? "找到与岗位直接相关的项目经历。" : "未找到与岗位明确要求直接对应的项目经历。") +
+      (hasSparseEvidence ? " 输入信息较少，因此评分可信度较低。" : "")
   };
 }
 
